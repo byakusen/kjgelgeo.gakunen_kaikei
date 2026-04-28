@@ -1,0 +1,1335 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>学年会計</title>
+<style>
+  :root {
+    --ink: #1a1a1a;
+    --ink-soft: #4a4a4a;
+    --paper: #fdfcf7;
+    --paper-edge: #f0ede2;
+    --line: #c9c4b3;
+    --line-soft: #e6e2d3;
+    --accent: #8b3a3a;
+    --accent-soft: #f5ebe8;
+    --shaded: #faf7ec;
+    --warn-bg: #fff8e1;
+    --warn-line: #d9a441;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", "MS Mincho", serif;
+    background: var(--paper-edge);
+    color: var(--ink);
+    font-size: 14px;
+  }
+
+  /* ============ 操作バー（印刷時は消える） ============ */
+  .toolbar {
+    position: sticky; top: 0; z-index: 100;
+    background: var(--ink);
+    color: var(--paper);
+    padding: 10px 20px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  .toolbar h1 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    margin-right: 16px;
+  }
+  .toolbar .group {
+    display: flex; gap: 6px;
+    padding: 0 10px;
+    border-left: 1px solid #555;
+  }
+  .toolbar .group:first-of-type { border-left: none; }
+  .toolbar label {
+    font-size: 12px;
+    align-self: center;
+    margin-right: 4px;
+    color: #ccc;
+  }
+  .toolbar select, .toolbar button, .toolbar input {
+    font-family: inherit;
+    font-size: 13px;
+    padding: 5px 12px;
+    border: 1px solid #555;
+    background: #2a2a2a;
+    color: var(--paper);
+    border-radius: 2px;
+    cursor: pointer;
+  }
+  .toolbar button:hover { background: #444; }
+  .toolbar button.primary { background: var(--accent); border-color: var(--accent); }
+  .toolbar button.primary:hover { background: #a04848; }
+  .toolbar .spacer { flex: 1; }
+  .toolbar .save-status {
+    font-size: 11px;
+    color: #aaa;
+    margin-left: 8px;
+  }
+
+  /* ============ A4の紙風レイアウト ============ */
+  .page-wrap {
+    padding: 30px 20px 60px;
+    display: flex;
+    justify-content: center;
+  }
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    background: var(--paper);
+    padding: 22mm 20mm 20mm;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    position: relative;
+  }
+
+  /* ============ 文書のヘッダ ============ */
+  .doc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 16px;
+  }
+  .doc-header .addressee {
+    font-size: 14px;
+  }
+  .doc-header .date input[type="text"] {
+    font-family: inherit;
+    font-size: 13px;
+    border: none;
+    border-bottom: 1px dotted var(--line);
+    background: transparent;
+    text-align: right;
+    width: 140px;
+  }
+  .doc-header .date input[type="text"]:focus { outline: none; border-bottom-color: var(--accent); }
+  .doc-header .date #today-btn:hover { background: var(--accent-soft) !important; }
+  @media print {
+    .doc-header .date #today-btn { display: none !important; }
+  }
+
+  .doc-title {
+    text-align: center;
+    font-size: 20px;
+    letter-spacing: 0.4em;
+    font-weight: 600;
+    margin: 18px 0 22px;
+    padding-bottom: 4px;
+    border-bottom: 2px solid var(--ink);
+    border-image: linear-gradient(to right, transparent, var(--ink) 20%, var(--ink) 80%, transparent) 1;
+  }
+  .doc-intro { margin-bottom: 8px; line-height: 1.8; }
+  .ki { text-align: center; letter-spacing: 0.3em; margin: 8px 0 14px; }
+
+  /* ============ セクション ============ */
+  .section { margin-bottom: 18px; }
+  .section-title {
+    font-weight: 600;
+    margin-bottom: 6px;
+    font-size: 14.5px;
+    padding: 3px 8px;
+    background: var(--accent-soft);
+    border-left: 3px solid var(--accent);
+    display: inline-block;
+  }
+
+  /* ============ 項目テーブル ============ */
+  table.items {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  table.items td {
+    padding: 4px 4px;
+    vertical-align: middle;
+    border-bottom: 1px dotted var(--line-soft);
+  }
+  /* 列幅 */
+  .col-flag    { width: 28px; text-align: center; }
+  .col-name    { width: auto; min-width: 120px; }
+  .col-unit    { width: 95px; text-align: right; }
+  .col-mark1   { width: 18px; text-align: center; color: var(--ink-soft); }
+  .col-num     { width: 75px; text-align: right; }
+  .col-mark2   { width: 18px; text-align: center; color: var(--ink-soft); }
+  .col-amount  { width: 110px; text-align: right; font-weight: 500; }
+  .col-vendor  { width: 90px; }
+  .col-paid    { width: 36px; text-align: center; }
+  .col-del     { width: 28px; text-align: center; }
+
+  table.items input[type="text"],
+  table.items input[type="number"] {
+    font-family: inherit;
+    font-size: 13.5px;
+    border: none;
+    background: transparent;
+    width: 100%;
+    padding: 2px 3px;
+    border-bottom: 1px dotted transparent;
+    color: inherit;
+  }
+  table.items input[type="text"]:hover,
+  table.items input[type="number"]:hover {
+    border-bottom-color: var(--line);
+  }
+  table.items input[type="text"]:focus,
+  table.items input[type="number"]:focus {
+    outline: none;
+    border-bottom-color: var(--accent);
+    background: #fffef8;
+  }
+  table.items input[type="number"] { text-align: right; }
+  /* 数値inputの上下矢印を消す */
+  table.items input[type="number"]::-webkit-outer-spin-button,
+  table.items input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none; margin: 0;
+  }
+  table.items input[type="number"] { -moz-appearance: textfield; }
+
+  .amount-cell {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ?マーク（未確定）行の見た目 */
+  tr.tentative { background: var(--warn-bg); }
+  tr.tentative .flag-btn { color: var(--warn-line); font-weight: bold; }
+  .flag-btn {
+    border: none; background: transparent; cursor: pointer;
+    font-size: 16px; color: #ccc; padding: 0;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+  }
+  .flag-btn:hover { background: var(--line-soft); color: var(--ink); }
+
+  .paid-checkbox { transform: scale(1.2); cursor: pointer; }
+
+  .del-btn {
+    border: none; background: transparent; cursor: pointer;
+    color: #c99; font-size: 14px; padding: 2px 6px;
+    border-radius: 3px;
+    visibility: hidden;
+  }
+  tr:hover .del-btn { visibility: visible; }
+  .del-btn:hover { background: #fce; color: #a33; }
+
+  /* 合計行 */
+  tr.total td {
+    border-top: 1px solid var(--ink);
+    border-bottom: 3px double var(--ink);
+    padding-top: 6px; padding-bottom: 6px;
+    font-weight: 600;
+    background: var(--shaded);
+  }
+
+  /* ============ 行追加ボタン ============ */
+  .add-row {
+    display: flex; gap: 8px; margin-top: 6px;
+    padding-left: 28px;
+  }
+  .add-row button {
+    font-family: inherit;
+    font-size: 12px;
+    padding: 4px 10px;
+    background: transparent;
+    border: 1px dashed var(--line);
+    color: var(--ink-soft);
+    cursor: pointer;
+    border-radius: 2px;
+  }
+  .add-row button:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+  /* ============ よく使う項目 ============ */
+  .preset-panel {
+    background: var(--shaded);
+    border: 1px solid var(--line-soft);
+    padding: 10px 12px;
+    margin-top: 8px;
+    border-radius: 3px;
+  }
+  .preset-panel .preset-title {
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-bottom: 8px;
+    letter-spacing: 0.1em;
+  }
+  .preset-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 4px 8px;
+    margin-bottom: 8px;
+  }
+  .preset-item {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12.5px; cursor: pointer;
+    padding: 2px 4px;
+  }
+  .preset-item input[type="checkbox"] { cursor: pointer; }
+  .preset-actions { display: flex; gap: 6px; }
+  .preset-actions button {
+    font-family: inherit; font-size: 12px;
+    padding: 4px 12px;
+    border: 1px solid var(--ink);
+    background: var(--paper);
+    cursor: pointer;
+    border-radius: 2px;
+  }
+  .preset-actions button:hover { background: var(--ink); color: var(--paper); }
+
+  /* ============ 差引 ============ */
+  .balance-section {
+    margin-top: 28px;
+    padding: 14px 16px;
+    border: 2px solid var(--ink);
+    background: var(--shaded);
+  }
+  .balance-formula {
+    font-size: 15px;
+    text-align: center;
+    letter-spacing: 0.05em;
+    font-variant-numeric: tabular-nums;
+  }
+  .balance-formula .num {
+    display: inline-block;
+    min-width: 80px;
+    padding: 2px 10px;
+    margin: 0 4px;
+    border-bottom: 1px solid var(--ink);
+    font-weight: 600;
+  }
+  .balance-formula .result {
+    color: var(--accent);
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .balance-note {
+    text-align: center;
+    margin-top: 6px;
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+
+  /* ============ 担任名 ============ */
+  .signature {
+    margin-top: 36px;
+    text-align: right;
+  }
+  .signature .label { display: inline-block; margin-right: 12px; font-size: 13px; }
+  .signature input {
+    font-family: inherit;
+    font-size: 14px;
+    border: none;
+    border-bottom: 1px dotted var(--line);
+    background: transparent;
+    width: 130px;
+    text-align: center;
+    margin-left: 6px;
+  }
+  .signature input:focus { outline: none; border-bottom-color: var(--accent); }
+  .signature .row { margin-bottom: 4px; }
+
+  /* ============ 学期切替タブ ============ */
+  .term-tabs {
+    display: flex;
+    gap: 0;
+    margin-right: 12px;
+  }
+  .term-tabs button {
+    padding: 5px 14px;
+    border-radius: 0;
+    border-right: none;
+  }
+  .term-tabs button:first-child { border-radius: 2px 0 0 2px; }
+  .term-tabs button:last-child { border-right: 1px solid #555; border-radius: 0 2px 2px 0; }
+  .term-tabs button.active {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  /* ============ モーダル ============ */
+  .modal-bg {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    display: none;
+    z-index: 200;
+    align-items: center; justify-content: center;
+  }
+  .modal-bg.open { display: flex; }
+  .modal {
+    background: var(--paper);
+    padding: 24px 28px;
+    border-radius: 4px;
+    max-width: 440px;
+    width: 90%;
+  }
+  .modal h2 { margin-top: 0; font-size: 16px; }
+  .modal p { line-height: 1.7; font-size: 13.5px; }
+  .modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  .modal button {
+    font-family: inherit;
+    padding: 6px 16px;
+    border: 1px solid var(--ink);
+    background: var(--paper);
+    cursor: pointer;
+    border-radius: 2px;
+  }
+  .modal button.primary { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--ink);
+    color: var(--paper);
+    padding: 10px 22px;
+    border-radius: 24px;
+    font-size: 13px;
+    opacity: 0;
+    transition: opacity 0.3s, transform 0.3s;
+    z-index: 300;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ============ 印刷用CSS ============ */
+  @media print {
+    @page {
+      size: A4;
+      margin: 15mm 15mm 15mm 15mm;
+    }
+    body { background: white; font-size: 12pt; }
+    .toolbar, .preset-panel, .add-row, .del-btn, .save-status { display: none !important; }
+    .page-wrap { padding: 0; }
+    .page {
+      width: 100%;
+      min-height: auto;
+      box-shadow: none;
+      padding: 0;
+      background: white;
+      /* JSで設定する縮小率を反映するための準備 */
+      transform-origin: top left;
+    }
+    table.items input[type="text"],
+    table.items input[type="number"],
+    .doc-header input,
+    .signature input {
+      border: none !important;
+      background: transparent !important;
+    }
+    .flag-btn { border: none; background: transparent; }
+    tr.tentative { background: white; }
+    tr.tentative .col-flag::before { content: "?"; font-weight: bold; }
+    tr.tentative .flag-btn { display: none; }
+    /* 印刷時は業者欄と済チェックの列を非表示にする */
+    .col-vendor, .col-paid { display: none !important; }
+  }
+  .print-mark { display: none; }
+</style>
+</head>
+<body>
+
+<!-- ===== 操作バー ===== -->
+<div class="toolbar">
+  <h1>学年会計</h1>
+
+  <div class="group">
+    <label>年度</label>
+    <select id="year-select"></select>
+    <button id="new-year-btn" title="新しい年度を追加">＋</button>
+  </div>
+
+  <div class="group term-tabs" id="term-tabs">
+    <button data-term="1">１学期</button>
+    <button data-term="2">２学期</button>
+    <button data-term="3">３学期</button>
+  </div>
+
+  <div class="group">
+    <button id="copy-prev-btn" title="前学期の項目をすべて引き継いで、金額だけ書き換えられる状態にします">前学期からコピー</button>
+    <button id="show-presets-btn" title="国語テスト・漢字スキルなど、よく使う項目をまとめて追加します">よく使う項目</button>
+  </div>
+
+  <div class="spacer"></div>
+  <span class="save-status" id="save-status">自動保存：—</span>
+
+  <div class="group">
+    <button class="primary" id="print-btn">印刷</button>
+  </div>
+  <div class="group">
+    <button id="export-btn" title="バックアップ用にファイルを書き出します">書き出し</button>
+    <button id="import-btn" title="書き出したファイルを読み込みます">読み込み</button>
+    <input type="file" id="import-file" accept=".json" style="display:none">
+  </div>
+</div>
+
+<!-- ===== 紙 ===== -->
+<div class="page-wrap">
+  <div class="page" id="page">
+
+    <div class="doc-header">
+      <div class="addressee">
+        <input type="text" id="addressee" style="font-family:inherit;font-size:14px;border:none;border-bottom:1px dotted var(--line);background:transparent;width:240px;" placeholder="４年生の保護者の皆様">
+      </div>
+      <div class="date">
+        <input type="text" id="doc-date" placeholder="令和○年○月○日">
+        <button type="button" id="today-btn" title="今日の日付（令和○年○月○日）を入れます" style="font-family:inherit;font-size:11px;padding:2px 8px;border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);border-radius:2px;cursor:pointer;margin-left:4px;">今日</button>
+      </div>
+    </div>
+
+    <div class="doc-title" id="doc-title">１学期　会計報告</div>
+
+    <div class="doc-intro" id="doc-intro">１学期会計は，下記のとおりになりましたので，報告いたします。</div>
+    <div class="ki">記</div>
+
+    <!-- 収入 -->
+    <div class="section">
+      <div class="section-title">【収入の部】</div>
+      <table class="items">
+        <tbody id="income-rows"></tbody>
+      </table>
+      <div class="add-row">
+        <button data-add="income">＋ 収入の項目を追加</button>
+      </div>
+    </div>
+
+    <!-- 支出 -->
+    <div class="section">
+      <div class="section-title">【支出の部】</div>
+      <table class="items">
+        <tbody id="expense-rows"></tbody>
+      </table>
+      <div class="add-row">
+        <button data-add="expense">＋ 支出の項目を追加</button>
+        <button id="show-presets-btn-2">よく使う項目から追加</button>
+      </div>
+
+      <!-- よく使う項目パネル -->
+      <div class="preset-panel" id="preset-panel" style="display:none;">
+        <div class="preset-title">よく使う項目（複数選んで一括追加できます）</div>
+        <div class="preset-grid" id="preset-grid"></div>
+        <div class="preset-actions">
+          <button id="preset-add">選択した項目を追加</button>
+          <button id="preset-cancel">閉じる</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 差引 -->
+    <div class="balance-section">
+      <div style="font-weight:600; margin-bottom:8px;">【差引】</div>
+      <div class="balance-formula">
+        <span class="num" id="bal-income">0</span>
+        −
+        <span class="num" id="bal-expense">0</span>
+        ＝
+        <span class="num result" id="bal-result">0</span>
+        円
+      </div>
+      <div class="balance-note" id="bal-note">は次学期に繰り越させていただきます。</div>
+    </div>
+
+    <!-- 担任名 -->
+    <div class="signature">
+      <div class="row"><input type="text" id="sig-label" style="font-family:inherit;font-size:13px;border:none;border-bottom:1px dotted var(--line);background:transparent;width:120px;text-align:center;" placeholder="○年担任"></div>
+      <div class="row"><input type="text" data-teacher="0" placeholder="担任氏名"></div>
+      <div class="row"><input type="text" data-teacher="1" placeholder="（複数学級の場合）"></div>
+      <div class="row"><input type="text" data-teacher="2" placeholder=""></div>
+      <div class="row"><input type="text" data-teacher="3" placeholder=""></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ===== モーダル ===== -->
+<div class="modal-bg" id="modal-bg">
+  <div class="modal" id="modal-box">
+    <h2 id="modal-title"></h2>
+    <p id="modal-body"></p>
+    <div class="actions" id="modal-actions"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ===========================================================================
+// データ構造
+// ===========================================================================
+// state = {
+//   currentYear: "2026",
+//   currentTerm: "1",
+//   years: {
+//     "2026": {
+//       "1": { addressee, date, headcount, income:[...], expense:[...], teachers:[...], grade:4 },
+//       "2": {...}, "3": {...}
+//     }
+//   }
+// }
+
+const STORAGE_KEY = "gakunen_kaikei_v1";
+
+const PRESETS = [
+  { name: "国語テスト",   unit: 400 },
+  { name: "算数テスト",   unit: 400 },
+  { name: "社会テスト",   unit: 330 },
+  { name: "理科テスト",   unit: 400 },
+  { name: "漢字スキル",   unit: 380 },
+  { name: "計算スキル",   unit: 380 },
+  { name: "夏スキル",     unit: 400 },
+  { name: "冬スキル",     unit: 320 },
+  { name: "話す・聞くスキル", unit: 360 },
+  { name: "音楽ワーク",   unit: 420 },
+  { name: "写しまるくん", unit: 430 },
+  { name: "理科学習ノート", unit: 520 },
+  { name: "書写ノート",   unit: 330 },
+  { name: "スポーツ振興センター掛金", unit: 440 },
+];
+
+function newRow(type) {
+  if (type === "income") {
+    return { name: "", unit: null, qty: null, amount: null, tentative: false };
+  }
+  return { name: "", unit: null, qty: null, amount: null, vendor: "", paid: false, tentative: false };
+}
+
+function newTerm(grade) {
+  return {
+    addressee: `${toKanjiNum(grade)}年生の保護者の皆様`,
+    sigLabel: `${toKanjiNum(grade)}年担任`,
+    date: "",
+    grade: grade,
+    income: [
+      { name: "前年度繰越金", unit: null, qty: null, amount: 0, tentative: false },
+      { name: "学級費（４月分）", unit: null, qty: null, amount: null, tentative: false },
+    ],
+    expense: [],
+    teachers: ["", "", "", ""],
+  };
+}
+
+function toKanjiNum(n) {
+  return ["〇","一","二","三","四","五","六"][n] || String(n);
+}
+
+// ===========================================================================
+// 状態管理
+// ===========================================================================
+let state = loadState();
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const data = JSON.parse(raw);
+      return migrateState(data);
+    }
+  } catch (e) {}
+  // 初期データ
+  const thisYear = new Date().getFullYear();
+  const yKey = String(thisYear);
+  return {
+    currentYear: yKey,
+    currentTerm: "1",
+    years: {
+      [yKey]: {
+        "1": newTerm(4),
+        "2": newTerm(4),
+        "3": newTerm(4),
+      }
+    }
+  };
+}
+
+// 古い保存データに不足しているプロパティを補う
+function migrateState(data) {
+  if (!data || !data.years) return data;
+  for (const yKey in data.years) {
+    for (const tKey in data.years[yKey]) {
+      const term = data.years[yKey][tKey];
+      if (term.grade == null) term.grade = 4;
+      if (term.sigLabel == null) term.sigLabel = `${toKanjiNum(term.grade)}年担任`;
+      if (term.addressee == null) term.addressee = `${toKanjiNum(term.grade)}年生の保護者の皆様`;
+      if (term.date == null) term.date = "";
+      if (!Array.isArray(term.income)) term.income = [];
+      if (!Array.isArray(term.expense)) term.expense = [];
+      if (!Array.isArray(term.teachers)) term.teachers = ["", "", "", ""];
+      // 各行にも不足プロパティを補う
+      term.income.forEach(r => {
+        if (r.tentative == null) r.tentative = false;
+      });
+      term.expense.forEach(r => {
+        if (r.tentative == null) r.tentative = false;
+        if (r.vendor == null) r.vendor = "";
+        if (r.paid == null) r.paid = false;
+      });
+    }
+  }
+  return data;
+}
+
+function saveState() {
+  const status = document.getElementById("save-status");
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    const now = new Date();
+    const t = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}:${String(now.getSeconds()).padStart(2,"0")}`;
+    status.textContent = `自動保存：${t}`;
+    status.style.color = "#aaa";
+    saveState._failed = false;
+  } catch (e) {
+    status.textContent = "⚠ 自動保存できていません！書き出しを使ってください";
+    status.style.color = "#ff6b6b";
+    status.style.fontWeight = "bold";
+    // 連続でトーストを出さないよう、初回失敗時のみ通知
+    if (!saveState._failed) {
+      toast("⚠ 自動保存に失敗しました。「書き出し」でバックアップを取ってください");
+      saveState._failed = true;
+    }
+  }
+}
+
+function getCurrentTerm() {
+  return state.years[state.currentYear][state.currentTerm];
+}
+
+// ===========================================================================
+// 描画
+// ===========================================================================
+function render() {
+  renderYearSelect();
+  renderTermTabs();
+  renderDocument();
+  recalc();
+  saveState();
+}
+
+function renderYearSelect() {
+  const sel = document.getElementById("year-select");
+  sel.innerHTML = "";
+  const years = Object.keys(state.years).sort();
+  for (const y of years) {
+    const opt = document.createElement("option");
+    opt.value = y;
+    opt.textContent = `${y}年度`;
+    if (y === state.currentYear) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
+function renderTermTabs() {
+  document.querySelectorAll("#term-tabs button").forEach(b => {
+    b.classList.toggle("active", b.dataset.term === state.currentTerm);
+  });
+}
+
+function renderDocument() {
+  const t = getCurrentTerm();
+  const termKanji = ["", "１", "２", "３"][Number(state.currentTerm)];
+
+  document.getElementById("addressee").value = t.addressee || "";
+  document.getElementById("doc-date").value = t.date || "";
+  document.getElementById("doc-title").textContent = `${termKanji}学期　会計報告`;
+  document.getElementById("doc-intro").textContent = `${termKanji}学期会計は，下記のとおりになりましたので，報告いたします。`;
+
+  const nextTerm = state.currentTerm === "3" ? "次年度" : "次学期";
+  document.getElementById("bal-note").textContent = `は${nextTerm}に繰り越させていただきます。`;
+
+  document.getElementById("sig-label").value = t.sigLabel || `${toKanjiNum(t.grade || 4)}年担任`;
+  document.querySelectorAll('[data-teacher]').forEach(el => {
+    el.value = t.teachers[Number(el.dataset.teacher)] || "";
+  });
+
+  renderRows("income");
+  renderRows("expense");
+}
+
+function renderRows(type) {
+  const tbody = document.getElementById(type === "income" ? "income-rows" : "expense-rows");
+  tbody.innerHTML = "";
+  const t = getCurrentTerm();
+  const rows = t[type];
+
+  rows.forEach((row, idx) => {
+    const tr = document.createElement("tr");
+    if (row.tentative) tr.classList.add("tentative");
+
+    // ?マークボタン
+    const flagBtn = `<td class="col-flag"><button class="flag-btn" data-act="toggle-flag" data-type="${type}" data-idx="${idx}" title="未確定（？）の切り替え">${row.tentative ? "?" : "○"}</button></td>`;
+
+    // 品名
+    const nameTd = `<td class="col-name"><input type="text" data-field="name" data-type="${type}" data-idx="${idx}" value="${escapeAttr(row.name)}" placeholder="${type==='income' ? '項目名' : '品名'}"></td>`;
+
+    // 単価
+    const unitTd = `<td class="col-unit"><input type="number" min="0" step="1" data-field="unit" data-type="${type}" data-idx="${idx}" value="${row.unit ?? ""}" placeholder="単価"></td>`;
+
+    const mark1 = `<td class="col-mark1">×</td>`;
+
+    // 人数
+    const qtyTd = `<td class="col-num"><input type="number" min="0" step="1" data-field="qty" data-type="${type}" data-idx="${idx}" value="${row.qty ?? ""}" placeholder="人数"></td>`;
+
+    const mark2 = `<td class="col-mark2">＝</td>`;
+
+    // 金額：常に入力欄として表示。手入力があればそれを優先、なければ単価×人数の結果を表示
+    const computed = (row.unit != null && row.unit !== "" && row.qty != null && row.qty !== "")
+      ? Number(row.unit) * Number(row.qty)
+      : null;
+    const manualVal = (row.amount != null && row.amount !== "") ? row.amount : "";
+    const placeholder = computed != null ? computed.toLocaleString() : "金額";
+    const amountTd = `<td class="col-amount amount-cell"><input type="number" min="0" step="1" data-field="amount" data-type="${type}" data-idx="${idx}" value="${manualVal}" placeholder="${placeholder}" ${computed != null && manualVal === "" ? 'style="color:#888;"' : ''}></td>`;
+
+    let extraTds = "";
+    if (type === "expense") {
+      extraTds = `
+        <td class="col-vendor"><input type="text" data-field="vendor" data-type="${type}" data-idx="${idx}" value="${escapeAttr(row.vendor || "")}" placeholder="業者"></td>
+        <td class="col-paid">
+          <input type="checkbox" class="paid-checkbox" data-field="paid" data-type="${type}" data-idx="${idx}" ${row.paid ? "checked" : ""}>
+          <span class="print-mark">${row.paid ? "済" : ""}</span>
+        </td>
+      `;
+    }
+
+    const delTd = `<td class="col-del"><button class="del-btn" data-act="delete" data-type="${type}" data-idx="${idx}" title="この行を削除">×</button></td>`;
+
+    tr.innerHTML = flagBtn + nameTd + unitTd + mark1 + qtyTd + mark2 + amountTd + extraTds + delTd;
+    tbody.appendChild(tr);
+  });
+
+  // 合計行
+  const totalTr = document.createElement("tr");
+  totalTr.classList.add("total");
+  const total = rows.reduce((s, r) => s + computeAmount(r), 0);
+  const colspan = type === "expense" ? 3 : 1;
+  totalTr.innerHTML = `
+    <td colspan="6" style="text-align:right; padding-right:6px;">合計</td>
+    <td class="col-amount amount-cell">${total.toLocaleString()} 円</td>
+    ${type === "expense" ? '<td colspan="3"></td>' : '<td></td>'}
+  `;
+  tbody.appendChild(totalTr);
+}
+
+function escapeAttr(s) {
+  return String(s ?? "").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+}
+
+function computeAmount(row) {
+  // 手入力の金額があれば最優先
+  if (row.amount != null && row.amount !== "") {
+    return Number(row.amount);
+  }
+  // なければ単価×人数
+  if (row.unit != null && row.unit !== "" && row.qty != null && row.qty !== "") {
+    return Number(row.unit) * Number(row.qty);
+  }
+  return 0;
+}
+
+function recalc() {
+  const t = getCurrentTerm();
+  const totalIn  = t.income.reduce((s,r)=>s+computeAmount(r),0);
+  const totalEx  = t.expense.reduce((s,r)=>s+computeAmount(r),0);
+  const bal = totalIn - totalEx;
+  document.getElementById("bal-income").textContent  = totalIn.toLocaleString();
+  document.getElementById("bal-expense").textContent = totalEx.toLocaleString();
+  document.getElementById("bal-result").textContent  = bal.toLocaleString();
+
+  // 各セクションの合計行（テーブルの最終行）も更新
+  ["income", "expense"].forEach(type => {
+    const tbody = document.getElementById(type === "income" ? "income-rows" : "expense-rows");
+    const totalRow = tbody.querySelector("tr.total");
+    if (totalRow) {
+      const amountCell = totalRow.querySelector(".col-amount");
+      if (amountCell) {
+        const sum = (type === "income" ? totalIn : totalEx);
+        amountCell.textContent = `${sum.toLocaleString()} 円`;
+      }
+    }
+  });
+}
+
+// ===========================================================================
+// イベントハンドラ（イベント委任）
+// ===========================================================================
+document.body.addEventListener("input", e => {
+  const el = e.target;
+  if (!el.dataset.field) {
+    // ヘッダ系
+    if (el.id === "addressee") { getCurrentTerm().addressee = el.value; saveState(); return; }
+    if (el.id === "doc-date") { getCurrentTerm().date = el.value; saveState(); return; }
+    if (el.id === "sig-label") { getCurrentTerm().sigLabel = el.value; saveState(); return; }
+    if (el.dataset.teacher != null) { getCurrentTerm().teachers[Number(el.dataset.teacher)] = el.value; saveState(); return; }
+    return;
+  }
+  const { field, type, idx } = el.dataset;
+  const row = getCurrentTerm()[type][Number(idx)];
+  if (field === "paid") row[field] = el.checked;
+  else if (field === "name" || field === "vendor") row[field] = el.value;
+  else {
+    // 数値系：全角→半角変換、マイナスを禁止、整数化
+    let v = el.value;
+    if (v === "") {
+      row[field] = null;
+    } else {
+      // 全角数字を半角に（万一IMEで入った場合の保険）
+      v = String(v).replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+      let n = Number(v);
+      if (isNaN(n)) {
+        row[field] = null;
+      } else {
+        if (n < 0) n = 0;          // マイナスは0扱い
+        n = Math.round(n);         // 小数は四捨五入で整数に
+        row[field] = n;
+        // 入力欄の表示も補正後の値に揃える（カーソル位置を保つため、値が変わっていたときだけ）
+        if (String(n) !== el.value) {
+          const pos = el.selectionStart;
+          el.value = String(n);
+          // カーソル位置の復元（範囲外は末尾）
+          try { el.setSelectionRange(pos, pos); } catch (e) {}
+        }
+      }
+    }
+  }
+
+  // 単価・人数を変えたとき：再描画はせず、同じ行の金額欄のplaceholder（薄い文字のプレビュー）だけ更新
+  // ※再描画するとinputがリセットされてフォーカスが外れ、続きの数字が入らなくなる
+  if (field === "unit" || field === "qty") {
+    const computed = (row.unit != null && row.unit !== "" && row.qty != null && row.qty !== "")
+      ? Number(row.unit) * Number(row.qty)
+      : null;
+    const amountInput = document.querySelector(
+      `input[data-field="amount"][data-type="${type}"][data-idx="${idx}"]`
+    );
+    if (amountInput) {
+      amountInput.placeholder = computed != null ? computed.toLocaleString() : "金額";
+      // 手入力されていない場合のみ、プレビュー色（薄いグレー）の見た目を維持
+      if (!amountInput.value) {
+        amountInput.style.color = computed != null ? "#888" : "";
+      }
+    }
+  }
+  recalc();
+  saveState();
+});
+
+document.body.addEventListener("click", e => {
+  const el = e.target.closest("[data-act], [data-add]");
+  if (!el) return;
+
+  if (el.dataset.add) {
+    const type = el.dataset.add;
+    getCurrentTerm()[type].push(newRow(type));
+    renderRows(type);
+    recalc();
+    saveState();
+    return;
+  }
+
+  const act = el.dataset.act;
+  if (act === "toggle-flag") {
+    const { type, idx } = el.dataset;
+    const row = getCurrentTerm()[type][Number(idx)];
+    row.tentative = !row.tentative;
+    renderRows(type);
+    saveState();
+  } else if (act === "delete") {
+    const { type, idx } = el.dataset;
+    confirmModal("行を削除", "この行を削除しますか？", () => {
+      getCurrentTerm()[type].splice(Number(idx), 1);
+      renderRows(type);
+      recalc();
+      saveState();
+    });
+  }
+});
+
+// ===========================================================================
+// 年度・学期切替
+// ===========================================================================
+document.getElementById("year-select").addEventListener("change", e => {
+  state.currentYear = e.target.value;
+  render();
+});
+
+document.getElementById("term-tabs").addEventListener("click", e => {
+  const b = e.target.closest("button[data-term]");
+  if (!b) return;
+  state.currentTerm = b.dataset.term;
+  render();
+});
+
+document.getElementById("new-year-btn").addEventListener("click", () => {
+  promptModal("新しい年度を追加", "年度（西暦）を入力してください", String(new Date().getFullYear()), (val) => {
+    if (!val || !/^\d{4}$/.test(val)) { toast("4桁の数字で入力してください"); return; }
+    if (state.years[val]) { toast("その年度はすでにあります"); return; }
+    // 学年を聞く
+    promptModal("学年を入力", "この年度に担当する学年（1〜6）を入力してください", "4", (g) => {
+      const grade = Number(g);
+      if (!grade || grade < 1 || grade > 6) { toast("1〜6で入力してください"); return; }
+      state.years[val] = { "1": newTerm(grade), "2": newTerm(grade), "3": newTerm(grade) };
+      state.currentYear = val;
+      state.currentTerm = "1";
+      render();
+      toast(`${val}年度を追加しました`);
+    });
+  });
+});
+
+// ===========================================================================
+// 前学期からコピー
+// ===========================================================================
+document.getElementById("copy-prev-btn").addEventListener("click", () => {
+  const prev = findPreviousTerm();
+  if (!prev) { toast("前の学期が見つかりません"); return; }
+
+  // 現在の学期に入力済みかどうか判定（金額・項目名のいずれかが入っているか）
+  const cur = getCurrentTerm();
+  const hasData =
+    cur.income.some(r => (r.name && r.name !== "前年度繰越金" && !r.name.startsWith("学級費")) || r.unit != null || r.qty != null || (r.amount != null && r.amount !== 0)) ||
+    cur.expense.length > 0;
+
+  const warningPrefix = hasData
+    ? `<span style="color:#a33;font-weight:bold;">⚠ 現在の学期にはすでに入力されたデータがあります。</span><br><br>`
+    : "";
+
+  confirmModal(
+    "前学期からコピー",
+    warningPrefix +
+    `${prev.label}の項目を、現在の学期に引き継ぎます。<br>` +
+    `金額は空欄になり、項目名・単価・人数・業者だけがコピーされます。<br>` +
+    `<span style="color:#a33;">現在の学期の入力内容はすべて上書きされ、元には戻せません。</span><br>` +
+    `よろしいですか？`,
+    () => {
+      const cur = getCurrentTerm();
+      // 収入：項目名と単価・人数だけコピー、金額はクリア
+      cur.income = prev.term.income.map(r => ({
+        name: r.name,
+        unit: r.unit,
+        qty: r.qty,
+        amount: null,
+        tentative: r.tentative || false,
+      }));
+      // 「前年度繰越金」「○学期繰越金」は項目名を現在の学期に合わせて自動調整
+      if (cur.income.length > 0) {
+        const first = cur.income[0];
+        if (first.name && first.name.includes("繰越")) {
+          if (state.currentTerm === "1") first.name = "前年度繰越金";
+          else first.name = `${["", "１", "２"][Number(state.currentTerm) - 1]}学期繰越金`;
+        }
+      }
+      // 学級費の月名を現在の学期に合わせて書き換え
+      const monthsByTerm = {
+        "1": ["４月", "５月", "６月", "７月"],
+        "2": ["９月", "10月", "11月", "12月"],
+        "3": ["１月", "２月", "３月"],
+      };
+      const targetMonths = monthsByTerm[state.currentTerm];
+      let mIdx = 0;
+      cur.income.forEach(r => {
+        if (r.name && r.name.startsWith("学級費")) {
+          if (mIdx < targetMonths.length) {
+            r.name = `学級費（${targetMonths[mIdx]}分）`;
+            mIdx++;
+          }
+        }
+      });
+
+      // 支出：金額はクリア、業者・「済」もクリア
+      cur.expense = prev.term.expense.map(r => ({
+        name: r.name,
+        unit: r.unit,
+        qty: r.qty,
+        amount: null,
+        vendor: r.vendor || "",
+        paid: false,
+        tentative: r.tentative || false,
+      }));
+
+      render();
+      toast(`${prev.label}からコピーしました`);
+    }
+  );
+});
+
+function findPreviousTerm() {
+  // 同年度の前学期 → 前年度の３学期
+  const curT = Number(state.currentTerm);
+  if (curT > 1) {
+    const prevT = String(curT - 1);
+    return {
+      term: state.years[state.currentYear][prevT],
+      label: `${state.currentYear}年度 ${["", "１", "２"][curT - 1]}学期`,
+    };
+  }
+  // 前年度の3学期
+  const years = Object.keys(state.years).sort();
+  const ci = years.indexOf(state.currentYear);
+  if (ci > 0) {
+    const py = years[ci - 1];
+    return {
+      term: state.years[py]["3"],
+      label: `${py}年度 ３学期`,
+    };
+  }
+  return null;
+}
+
+// ===========================================================================
+// よく使う項目
+// ===========================================================================
+document.getElementById("show-presets-btn").addEventListener("click", showPresets);
+document.getElementById("show-presets-btn-2").addEventListener("click", showPresets);
+document.getElementById("preset-cancel").addEventListener("click", () => {
+  document.getElementById("preset-panel").style.display = "none";
+});
+document.getElementById("preset-add").addEventListener("click", () => {
+  const checks = document.querySelectorAll("#preset-grid input[type=checkbox]:checked");
+  if (checks.length === 0) { toast("項目を選んでください"); return; }
+  const t = getCurrentTerm();
+  // 現在の人数を推定（既存の支出行のqtyの最頻値、なければ空）
+  const qtyHint = mostCommonQty(t);
+  checks.forEach(c => {
+    const idx = Number(c.dataset.idx);
+    const p = PRESETS[idx];
+    t.expense.push({
+      name: p.name,
+      unit: p.unit,
+      qty: qtyHint,
+      amount: null,
+      vendor: "",
+      paid: false,
+      tentative: false,
+    });
+  });
+  document.getElementById("preset-panel").style.display = "none";
+  renderRows("expense");
+  recalc();
+  saveState();
+  toast(`${checks.length}項目を追加しました`);
+});
+
+function mostCommonQty(term) {
+  const counts = {};
+  term.expense.concat(term.income).forEach(r => {
+    if (r.qty != null && r.qty !== "") {
+      counts[r.qty] = (counts[r.qty] || 0) + 1;
+    }
+  });
+  let best = null, bestN = 0;
+  for (const k in counts) {
+    if (counts[k] > bestN) { bestN = counts[k]; best = Number(k); }
+  }
+  return best;
+}
+
+function showPresets() {
+  const grid = document.getElementById("preset-grid");
+  grid.innerHTML = "";
+  PRESETS.forEach((p, i) => {
+    const lbl = document.createElement("label");
+    lbl.className = "preset-item";
+    lbl.innerHTML = `<input type="checkbox" data-idx="${i}"><span>${p.name} <span style="color:#999;">(${p.unit}円)</span></span>`;
+    grid.appendChild(lbl);
+  });
+  document.getElementById("preset-panel").style.display = "block";
+}
+
+// ===========================================================================
+// 書き出し・読み込み
+// ===========================================================================
+document.getElementById("export-btn").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `学年会計_バックアップ_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast("書き出しました");
+});
+
+document.getElementById("import-btn").addEventListener("click", () => {
+  document.getElementById("import-file").click();
+});
+document.getElementById("import-file").addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const data = migrateState(JSON.parse(ev.target.result));
+      if (!data.years || !data.currentYear) throw new Error("形式エラー");
+      confirmModal("読み込み", "現在のデータを上書きします。よろしいですか？", () => {
+        state = data;
+        render();
+        toast("読み込みました");
+      });
+    } catch (err) {
+      toast("ファイルを読み込めませんでした");
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = "";
+});
+
+// ===========================================================================
+// モーダル
+// ===========================================================================
+function confirmModal(title, body, onOk) {
+  const bg = document.getElementById("modal-bg");
+  document.getElementById("modal-title").textContent = title;
+  document.getElementById("modal-body").innerHTML = body;
+  const actions = document.getElementById("modal-actions");
+  actions.innerHTML = "";
+  const cancel = document.createElement("button");
+  cancel.textContent = "キャンセル";
+  cancel.onclick = () => bg.classList.remove("open");
+  const ok = document.createElement("button");
+  ok.textContent = "OK";
+  ok.className = "primary";
+  ok.onclick = () => { bg.classList.remove("open"); onOk(); };
+  actions.append(cancel, ok);
+  bg.classList.add("open");
+}
+
+function promptModal(title, body, defaultVal, onOk) {
+  const bg = document.getElementById("modal-bg");
+  document.getElementById("modal-title").textContent = title;
+  document.getElementById("modal-body").innerHTML = `${body}<br><br><input type="text" id="modal-input" value="${escapeAttr(defaultVal)}" style="width:100%; font-family:inherit; font-size:14px; padding:6px 8px; border:1px solid var(--line); border-radius:2px;">`;
+  const actions = document.getElementById("modal-actions");
+  actions.innerHTML = "";
+  const cancel = document.createElement("button");
+  cancel.textContent = "キャンセル";
+  cancel.onclick = () => bg.classList.remove("open");
+  const ok = document.createElement("button");
+  ok.textContent = "OK";
+  ok.className = "primary";
+  ok.onclick = () => {
+    const v = document.getElementById("modal-input").value;
+    bg.classList.remove("open");
+    onOk(v);
+  };
+  actions.append(cancel, ok);
+  bg.classList.add("open");
+  setTimeout(()=> document.getElementById("modal-input").focus(), 50);
+}
+
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toast._tid);
+  toast._tid = setTimeout(() => t.classList.remove("show"), 2200);
+}
+
+// ===========================================================================
+// 「今日」ボタン（日付を令和○年○月○日 形式で挿入）
+// ===========================================================================
+document.getElementById("today-btn").addEventListener("click", () => {
+  const now = new Date();
+  // 令和は2019年5月1日から
+  const reiwaYear = now.getFullYear() - 2018;
+  const m = now.getMonth() + 1;
+  const d = now.getDate();
+  // 令和元年だけ「元年」と書くケースが多いが、ここは数字でシンプルに
+  const yStr = reiwaYear === 1 ? "元" : String(reiwaYear);
+  const dateStr = `令和${yStr}年${m}月${d}日`;
+  const input = document.getElementById("doc-date");
+  input.value = dateStr;
+  getCurrentTerm().date = dateStr;
+  saveState();
+  toast(`日付を入れました：${dateStr}`);
+});
+
+// ===========================================================================
+// 自動フィット印刷
+// ===========================================================================
+// 仕組み：印刷前に紙の高さを測り、はみ出ていたら全体を縮小して1枚に収める。
+// A4 = 297mm、上下マージン15mmずつなので、印刷可能領域の高さは267mm。
+// ブラウザ標準の印刷DPI 96dpi では 1mm ≒ 3.78px なので、267mm ≒ 1009px。
+// 余裕をみて 1000px を上限の目安にする。
+const PRINT_MAX_HEIGHT_PX = 1000;
+const PRINT_MIN_SCALE = 0.5;  // これ以上は縮小しない（読めなくなるので）
+
+document.getElementById("print-btn").addEventListener("click", () => {
+  const page = document.getElementById("page");
+
+  // いったん通常状態で高さを測る
+  page.style.transform = "";
+  page.style.height = "";
+  page.style.width = "";
+
+  // 紙のレイアウト幅は 210mm（CSSで指定済み）。実ピクセル幅を測る。
+  const realWidth  = page.offsetWidth;
+  const realHeight = page.offsetHeight;
+  // 紙の上下パディング（22mm + 20mm）も含めた高さで判定するが、
+  // CSS側のpaddingは印刷時0になるため、内容物の高さで判断するほうが安全。
+  // ここでは page要素 全体の実高さで測る。
+
+  // 印刷用紙の縦のpx換算：210mm幅 が 1枚の幅に対応するので、それを基準に縦の限界を計算
+  // A4比率：297/210 ≒ 1.414  → 縦の限界は realWidth * (267/180)
+  // (印刷時のpaddingが0、上下マージン15mmずつ、コンテンツ領域 297-30=267mm。
+  //  幅も同じく 210-30=180mm が利用可能なので、縦/横比率 = 267/180)
+  const maxHeight = realWidth * (267 / 180);
+
+  let scale = 1;
+  if (realHeight > maxHeight) {
+    scale = maxHeight / realHeight;
+    // ほんの少し余裕を持たせる（端ギリギリだと改ページされる場合がある）
+    scale = scale * 0.98;
+    if (scale < PRINT_MIN_SCALE) scale = PRINT_MIN_SCALE;
+  }
+
+  if (scale < 1) {
+    // 縮小すると右下に余白ができるので、scale で割って元の領域を保つ
+    // transformと幅指定を、印刷時にも確実に効くよう直接style属性に書き込む
+    page.setAttribute("style",
+      `transform: scale(${scale}) !important;` +
+      `transform-origin: top left !important;` +
+      `width: ${100 / scale}% !important;`
+    );
+    toast(`${Math.round(scale * 100)}%に縮小して印刷します`);
+  }
+
+  // 少し待ってから印刷ダイアログを開く（レイアウト反映のため）
+  setTimeout(() => {
+    window.print();
+    // 印刷後、画面表示を元に戻す
+    setTimeout(() => {
+      page.removeAttribute("style");
+    }, 100);
+  }, 80);
+});
+
+// ===========================================================================
+// 起動
+// ===========================================================================
+// localStorageが使えるか起動時に確認
+function checkStorage() {
+  try {
+    const k = "__test__";
+    localStorage.setItem(k, "1");
+    localStorage.removeItem(k);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+if (!checkStorage()) {
+  setTimeout(() => {
+    toast("⚠ ブラウザの保存機能が使えません。プライベートモードを解除するか、こまめに「書き出し」してください");
+  }, 500);
+}
+
+render();
+</script>
+</body>
+</html>
